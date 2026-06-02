@@ -1,0 +1,30 @@
+{"query": "What is your return policy?", "golden_document_ids": ["doc-returns-001"], "expected_answer_contains": ["return", "policy", "days"]}
+{"query": "How do I reset my account password?", "golden_document_ids": ["doc-account-001"], "expected_answer_contains": ["password", "reset", "email"]}
+{"query": "Can I cancel my subscription at any time?", "golden_document_ids": ["doc-billing-001"], "expected_answer_contains": ["cancel", "subscription"]}
+{"query": "What payment methods do you accept?", "golden_document_ids": ["doc-billing-002"], "expected_answer_contains": ["payment", "credit", "card"]}
+{"query": "Where is my order? It hasn't arrived yet.", "golden_document_ids": ["doc-shipping-001"], "expected_answer_contains": ["order", "shipping", "track"]}
+{"query": "How do I contact technical support?", "golden_document_ids": ["doc-support-001"], "expected_answer_contains": ["support", "contact", "email"]}
+{"query": "Is there a free trial available?", "golden_document_ids": ["doc-pricing-001"], "expected_answer_contains": ["trial", "free"]}
+{"query": "How do I update my billing address?", "golden_document_ids": ["doc-billing-003"], "expected_answer_contains": ["billing", "address", "update"]}
+{"query": "What are your business hours?", "golden_document_ids": ["doc-support-002"], "expected_answer_contains": ["hours", "business"]}
+{"query": "Do you offer enterprise pricing?", "golden_document_ids": ["doc-pricing-002"], "expected_answer_contains": ["enterprise", "pricing", "plan"]}
+{"query": "How do I download my invoices?", "golden_document_ids": ["doc-billing-004"], "expected_answer_contains": ["invoice", "download", "billing"]}
+{"query": "Can I upgrade my plan mid-cycle?", "golden_document_ids": ["doc-billing-001"], "expected_answer_contains": ["upgrade", "plan"]}
+{"query": "What data do you store about me?", "golden_document_ids": ["doc-privacy-001"], "expected_answer_contains": ["data", "privacy", "store"]}
+{"query": "How do I delete my account?", "golden_document_ids": ["doc-account-002"], "expected_answer_contains": ["delete", "account"]}
+{"query": "Is my data encrypted?", "golden_document_ids": ["doc-security-001"], "expected_answer_contains": ["encrypt", "security", "data"]}
+{"query": "How do I add a team member to my account?", "golden_document_ids": ["doc-account-003"], "expected_answer_contains": ["team", "member", "invite"]}
+{"query": "What is the maximum file upload size?", "golden_document_ids": ["doc-features-001"], "expected_answer_contains": ["file", "upload", "size"]}
+{"query": "Do you support two-factor authentication?", "golden_document_ids": ["doc-security-002"], "expected_answer_contains": ["two-factor", "2fa", "authentication"]}
+{"query": "How do I export my data?", "golden_document_ids": ["doc-account-004"], "expected_answer_contains": ["export", "data"]}
+{"query": "What SLA do you guarantee?", "golden_document_ids": ["doc-sla-001"], "expected_answer_contains": ["sla", "uptime", "guarantee"]}
+{"query": "How do I integrate with Slack?", "golden_document_ids": ["doc-integrations-001"], "expected_answer_contains": ["slack", "integration"]}
+{"query": "Do you have a mobile app?", "golden_document_ids": ["doc-features-002"], "expected_answer_contains": ["mobile", "app", "ios", "android"]}
+{"query": "What happens when my trial expires?", "golden_document_ids": ["doc-pricing-001"], "expected_answer_contains": ["trial", "expire"]}
+{"query": "How do I set up SSO?", "golden_document_ids": ["doc-security-003"], "expected_answer_contains": ["sso", "single sign-on"]}
+{"query": "Can I pause my subscription?", "golden_document_ids": ["doc-billing-001"], "expected_answer_contains": ["pause", "subscription"]}
+{"query": "How many API calls can I make per minute?", "golden_document_ids": ["doc-api-001"], "expected_answer_contains": ["api", "rate", "limit"]}
+{"query": "Do you offer a non-profit discount?", "golden_document_ids": ["doc-pricing-003"], "expected_answer_contains": ["discount", "non-profit"]}
+{"query": "How do I report a bug?", "golden_document_ids": ["doc-support-003"], "expected_answer_contains": ["bug", "report", "support"]}
+{"query": "Where can I find the API documentation?", "golden_document_ids": ["doc-api-002"], "expected_answer_contains": ["api", "documentation", "docs"]}
+{"query": "What compliance certifications do you hold?", "golden_document_ids": ["doc-security-004"], "expected_answer_contains": ["compliance", "soc2", "iso"]}

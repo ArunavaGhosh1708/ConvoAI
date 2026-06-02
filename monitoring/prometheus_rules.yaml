@@ -1,0 +1,111 @@
+groups:
+  - name: convoai_alerts
+    interval: 60s
+    rules:
+      # ── Availability ───────────────────────────────────────────────────────
+      - alert: ConvoAI_APIDown
+        expr: up{job="convoai-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service:  convoai
+        annotations:
+          summary:     "ConvoAI API instance down"
+          description: "{{ $labels.instance }} has been unreachable for more than 2 minutes."
+          runbook_url: "https://wiki.internal/runbooks/convoai-api-down"
+
+      # ── Latency ───────────────────────────────────────────────────────────
+      - alert: ConvoAI_HighP95Latency
+        expr: >
+          histogram_quantile(0.95,
+            rate(http_request_duration_seconds_bucket{
+              job="convoai-api", handler="/api/v1/chat"
+            }[5m])
+          ) > 5
+        for: 5m
+        labels:
+          severity: warning
+          service:  convoai
+        annotations:
+          summary:     "High p95 chat latency"
+          description: "p95 latency for /api/v1/chat is {{ $value | humanizeDuration }}."
+
+      - alert: ConvoAI_CriticalP99Latency
+        expr: >
+          histogram_quantile(0.99,
+            rate(http_request_duration_seconds_bucket{
+              job="convoai-api", handler="/api/v1/chat"
+            }[5m])
+          ) > 10
+        for: 2m
+        labels:
+          severity: critical
+          service:  convoai
+        annotations:
+          summary:     "Critical p99 chat latency"
+          description: "p99 latency for /api/v1/chat is {{ $value | humanizeDuration }}."
+
+      # ── Error rate ────────────────────────────────────────────────────────
+      - alert: ConvoAI_HighErrorRate
+        expr: >
+          rate(http_requests_total{job="convoai-api", status=~"5.."}[5m])
+          /
+          rate(http_requests_total{job="convoai-api"}[5m])
+          > 0.05
+        for: 3m
+        labels:
+          severity: warning
+          service:  convoai
+        annotations:
+          summary:     "High 5xx error rate"
+          description: "5xx rate is {{ $value | humanizePercentage }}."
+
+      # ── Escalation rate ───────────────────────────────────────────────────
+      - alert: ConvoAI_HighEscalationRate
+        expr: >
+          rate(convoai_escalations_total[10m])
+          /
+          rate(http_requests_total{job="convoai-api", handler="/api/v1/chat"}[10m])
+          > 0.20
+        for: 10m
+        labels:
+          severity: warning
+          service:  convoai
+        annotations:
+          summary:     "Escalation rate above 20%"
+          description: "{{ $value | humanizePercentage }} of chats are escalating (target ≤ 13%)."
+
+      # ── Infrastructure ────────────────────────────────────────────────────
+      - alert: ConvoAI_PostgresDown
+        expr: pg_up{job="postgres"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service:  convoai
+        annotations:
+          summary:     "PostgreSQL is unreachable"
+          description: "ConvoAI database is down — all chat requests will fail."
+
+      - alert: ConvoAI_RedisDown
+        expr: redis_up{job="redis"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service:  convoai
+        annotations:
+          summary:     "Redis is unreachable"
+          description: "Redis unavailability degrades session memory and rate limiting."
+
+      - alert: ConvoAI_LowRAGCacheHitRate
+        expr: >
+          rate(convoai_rag_cache_hits_total[10m])
+          /
+          (rate(convoai_rag_cache_hits_total[10m]) + rate(convoai_rag_cache_misses_total[10m]))
+          < 0.50
+        for: 15m
+        labels:
+          severity: warning
+          service:  convoai
+        annotations:
+          summary:     "RAG Redis cache hit rate below 50%"
+          description: "Cache hit rate is {{ $value | humanizePercentage }}. Consider increasing TTL."

@@ -1,0 +1,56 @@
+# Alertmanager configuration for PagerDuty routing.
+# Place this in your Alertmanager config (alertmanager.yml) or merge into it.
+#
+# Prerequisites:
+#   1. Create a PagerDuty service and note the integration key
+#   2. Set PAGERDUTY_KEY env var or replace <PAGERDUTY_INTEGRATION_KEY> below
+#   3. docker-compose up alertmanager (or use GCP Cloud Monitoring for managed option)
+
+global:
+  resolve_timeout: 5m
+  pagerduty_url:   'https://events.pagerduty.com/v2/enqueue'
+
+route:
+  receiver:          'pagerduty-critical'
+  group_by:          ['alertname', 'service']
+  group_wait:        30s
+  group_interval:    5m
+  repeat_interval:   4h
+
+  routes:
+    # Critical alerts → immediate PagerDuty page
+    - match:
+        severity: critical
+      receiver: 'pagerduty-critical'
+      continue:  false
+
+    # Warning alerts → PagerDuty low-urgency
+    - match:
+        severity: warning
+      receiver: 'pagerduty-warning'
+      continue:  false
+
+receivers:
+  - name: 'pagerduty-critical'
+    pagerduty_configs:
+      - routing_key:  '${PAGERDUTY_INTEGRATION_KEY}'
+        severity:     'critical'
+        description:  '{{ range .Alerts }}{{ .Annotations.summary }}{{ end }}'
+        details:
+          runbook:     '{{ (index .Alerts 0).Annotations.runbook_url }}'
+          description: '{{ (index .Alerts 0).Annotations.description }}'
+          service:     '{{ (index .Alerts 0).Labels.service }}'
+
+  - name: 'pagerduty-warning'
+    pagerduty_configs:
+      - routing_key:  '${PAGERDUTY_INTEGRATION_KEY}'
+        severity:     'warning'
+        description:  '{{ range .Alerts }}{{ .Annotations.summary }}{{ end }}'
+
+inhibit_rules:
+  # If the API is down, suppress latency and error-rate alerts (they're noise)
+  - source_match:
+      alertname: ConvoAI_APIDown
+    target_match_re:
+      alertname: 'ConvoAI_High.*'
+    equal: ['service']
