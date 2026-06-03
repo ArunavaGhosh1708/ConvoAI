@@ -8,7 +8,6 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.context import AgentContext
-from app.config import settings
 from app.rag.retrieval import RetrievedChunk, retrieve
 
 logger = logging.getLogger(__name__)

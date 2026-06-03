@@ -1,6 +1,5 @@
 """POST /api/v1/chat — SSE streaming (stream=true) or JSON (stream=false)."""
 
-import json
 import logging
 from collections.abc import AsyncGenerator
 
@@ -124,7 +123,7 @@ async def _sse_generator(
     context = AgentContext(session_id=body.session_id)
 
     # Pre-load history before streaming begins
-    conversation = await mem.get_or_create_conversation(body.session_id, body.channel)
+    await mem.get_or_create_conversation(body.session_id, body.channel)
     history_dicts = await mem.load_history(body.session_id)
     chat_history = mem.history_to_lc_messages(history_dicts)
 

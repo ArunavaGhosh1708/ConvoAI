@@ -18,7 +18,10 @@ from app.database import Base, get_db
 from app.main import app
 from app.services.redis_client import get_redis
 
-TEST_DATABASE_URL = "postgresql+asyncpg://convoai:convoai@localhost:5432/convoai_test"
+TEST_DATABASE_URL = os.environ.get(
+    "DATABASE_URL",
+    "postgresql+asyncpg://convoai:convoai@localhost:5432/convoai",
+)
 
 test_engine = create_async_engine(TEST_DATABASE_URL, echo=False)
 TestSessionLocal = async_sessionmaker(bind=test_engine, class_=AsyncSession, expire_on_commit=False)

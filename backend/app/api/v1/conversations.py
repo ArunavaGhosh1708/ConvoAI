@@ -10,7 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.middleware.auth import require_jwt
-from app.models.conversation import Conversation, Message
+from app.models.conversation import Conversation
 from app.schemas.conversation import ConversationOut, MessageOut
 
 router = APIRouter(tags=["conversations"])

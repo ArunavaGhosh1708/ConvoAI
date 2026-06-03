@@ -175,7 +175,8 @@ async def ingest_document(
 
     try:
         # Write upload to a temp path so loaders can open it by path
-        import tempfile, os
+        import os
+        import tempfile
         suffix = f".{file_type}"
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
             tmp.write(file.read())

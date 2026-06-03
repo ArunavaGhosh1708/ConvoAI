@@ -7,8 +7,8 @@ from tests.conftest import admin_jwt
 @pytest.mark.asyncio
 async def test_get_metrics_returns_all_fields(mock_client):
     client, mock_db, _ = mock_client
-    # total, active, resolved, escalated, avg_conf
-    mock_db.scalar.side_effect = [10, 3, 5, 2, 0.75]
+    # total, active, resolved, escalated, avg_conf, avg_response_ms
+    mock_db.scalar.side_effect = [10, 3, 5, 2, 0.75, 1234.5]
 
     resp = await client.get(
         "/api/v1/admin/metrics",
@@ -22,13 +22,15 @@ async def test_get_metrics_returns_all_fields(mock_client):
     assert data["resolution_rate"] == pytest.approx(50.0)
     assert data["escalation_rate"] == pytest.approx(20.0)
     assert data["avg_confidence"] == pytest.approx(0.75)
+    assert data["avg_response_ms"] == pytest.approx(1234.5)
     assert "refreshed_at" in data
 
 
 @pytest.mark.asyncio
 async def test_get_metrics_zero_total_avoids_div_by_zero(mock_client):
     client, mock_db, _ = mock_client
-    mock_db.scalar.side_effect = [0, 0, 0, 0, None]
+    # total, active, resolved, escalated, avg_conf, avg_response_ms
+    mock_db.scalar.side_effect = [0, 0, 0, 0, None, 0.0]
 
     resp = await client.get(
         "/api/v1/admin/metrics",
@@ -40,6 +42,7 @@ async def test_get_metrics_zero_total_avoids_div_by_zero(mock_client):
     assert data["resolution_rate"] == 0.0
     assert data["escalation_rate"] == 0.0
     assert data["avg_confidence"] == 0.0
+    assert data["avg_response_ms"] == 0.0
 
 
 @pytest.mark.asyncio
