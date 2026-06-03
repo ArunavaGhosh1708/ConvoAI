@@ -10,6 +10,7 @@ from app.api.v1.conversations import router as conversations_router
 from app.api.v1.documents import router as documents_router
 from app.api.v1.escalations import router as escalations_router
 from app.api.v1.health import router as health_router
+from app.api.v1.review_queue import router as review_queue_router
 from app.api.v1.voice import router as voice_router
 from app.api.v1.voice_config import router as voice_config_router
 from app.config import settings
@@ -66,5 +67,6 @@ app.include_router(admin_router, prefix="/api/v1")
 app.include_router(documents_router, prefix="/api/v1")
 app.include_router(escalations_router, prefix="/api/v1")
 app.include_router(agent_config_router, prefix="/api/v1")
+app.include_router(review_queue_router, prefix="/api/v1")
 app.include_router(voice_router, prefix="/api/v1")
 app.include_router(voice_config_router, prefix="/api/v1")

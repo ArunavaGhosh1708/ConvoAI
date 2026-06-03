@@ -1,4 +1,4 @@
-import { Activity, AlertTriangle, CheckCircle, MessageSquare, RefreshCw } from 'lucide-react'
+import { Activity, AlertTriangle, CheckCircle, Clock, MessageSquare, RefreshCw } from 'lucide-react'
 import { useMetrics } from '../../hooks/useMetrics'
 import { MetricsCard } from './MetricsCard'
 
@@ -23,7 +23,7 @@ export function MetricsDashboard() {
         <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600">{error}</p>
       )}
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
         <MetricsCard
           label="Total Sessions"
           value={metrics?.total_sessions ?? '—'}
@@ -54,6 +54,14 @@ export function MetricsDashboard() {
           sub="Retrieval quality"
           icon={<Activity className="h-5 w-5" />}
           accent="purple"
+          loading={loading}
+        />
+        <MetricsCard
+          label="Avg Response"
+          value={metrics ? `${metrics.avg_response_ms.toFixed(0)} ms` : '—'}
+          sub="Last 24 h · target < 3 000 ms"
+          icon={<Clock className="h-5 w-5" />}
+          accent="blue"
           loading={loading}
         />
       </div>

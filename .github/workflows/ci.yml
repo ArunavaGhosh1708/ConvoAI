@@ -1,0 +1,294 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  REGISTRY: us-central1-docker.pkg.dev
+  IMAGE: us-central1-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/convoai/api
+
+jobs:
+  # ── Stage 1: Lint & type check ──────────────────────────────────────────────
+  lint:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install lint tools
+        run: pip install ruff mypy
+
+      - name: ruff check
+        run: ruff check backend/app
+
+      - name: mypy
+        run: mypy backend/app --ignore-missing-imports --no-error-summary
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: eslint
+        working-directory: frontend
+        run: npm ci && npx eslint src --max-warnings=0
+
+  # ── Stage 2: Unit & integration tests ───────────────────────────────────────
+  test:
+    name: Tests (≥90% coverage)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: convoai
+          POSTGRES_PASSWORD: convoai
+          POSTGRES_DB: convoai
+        options: >-
+          --health-cmd "pg_isready -U convoai -d convoai"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 5432:5432
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+        ports:
+          - 6379:6379
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://convoai:convoai@localhost:5432/convoai
+      REDIS_URL: redis://localhost:6379/0
+      CELERY_BROKER_URL: redis://localhost:6379/1
+      CELERY_RESULT_BACKEND: redis://localhost:6379/1
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      JWT_SECRET: test-jwt-secret
+      API_KEY: test-api-key
+      APP_ENV: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Run migrations
+        working-directory: backend
+        run: alembic upgrade head
+
+      - name: Run tests with coverage
+        working-directory: backend
+        run: pytest --cov=app --cov-report=xml --cov-report=term-missing --cov-fail-under=90
+
+      - name: Upload coverage report
+        uses: codecov/codecov-action@v4
+        with:
+          files: backend/coverage.xml
+          flags: backend
+
+  # ── Stage 2b: k6 smoke test (50 VU, 30 s) ──────────────────────────────────
+  smoke-test:
+    name: k6 Smoke Test
+    runs-on: ubuntu-latest
+    needs: test
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: convoai
+          POSTGRES_PASSWORD: convoai
+          POSTGRES_DB: convoai
+        options: >-
+          --health-cmd "pg_isready -U convoai -d convoai"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 5432:5432
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+        ports:
+          - 6379:6379
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://convoai:convoai@localhost:5432/convoai
+      REDIS_URL: redis://localhost:6379/0
+      CELERY_BROKER_URL: redis://localhost:6379/1
+      CELERY_RESULT_BACKEND: redis://localhost:6379/1
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      JWT_SECRET: smoke-jwt-secret
+      API_KEY: smoke-api-key
+      APP_ENV: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Run migrations
+        working-directory: backend
+        run: alembic upgrade head
+
+      - name: Start API server
+        working-directory: backend
+        run: |
+          uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+          echo $! > /tmp/api.pid
+          for i in $(seq 1 20); do
+            curl -sf http://localhost:8000/api/v1/health && break
+            sleep 2
+          done
+
+      - name: Install k6
+        run: |
+          curl -fsSL https://dl.k6.io/key.gpg | sudo gpg --dearmor -o /usr/share/keyrings/k6-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" \
+            | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update && sudo apt-get install -y k6
+
+      - name: Run k6 smoke test (50 VU / 30 s)
+        run: |
+          k6 run \
+            --vus 50 --duration 30s \
+            --env BASE_URL=http://localhost:8000 \
+            --env API_KEY=smoke-api-key \
+            loadtests/k6/sse_chat.js
+
+      - name: Stop API server
+        if: always()
+        run: kill $(cat /tmp/api.pid) 2>/dev/null || true
+
+  # ── Stage 3: Build & push Docker image ──────────────────────────────────────
+  build:
+    name: Build & Push Image
+    runs-on: ubuntu-latest
+    needs: [lint, test, smoke-test]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    outputs:
+      image_tag: ${{ steps.meta.outputs.version }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=sha,prefix=,format=short
+            type=raw,value=latest
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ── Stage 4: Deploy to Cloud Run (canary → 100%) ────────────────────────────
+  deploy:
+    name: Deploy to Cloud Run
+    runs-on: ubuntu-latest
+    needs: build
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy canary revision (no traffic)
+        run: |
+          gcloud run deploy convoai-api \
+            --image "${{ env.IMAGE }}:${{ needs.build.outputs.image_tag }}" \
+            --region us-central1 \
+            --project "${{ vars.GCP_PROJECT_ID }}" \
+            --no-traffic \
+            --tag canary \
+            --quiet
+
+      - name: Route 10% traffic to canary
+        run: |
+          gcloud run services update-traffic convoai-api \
+            --region us-central1 \
+            --project "${{ vars.GCP_PROJECT_ID }}" \
+            --to-tags canary=10 \
+            --quiet
+
+      - name: Smoke test canary
+        run: |
+          CANARY_URL=$(gcloud run services describe convoai-api \
+            --region us-central1 \
+            --project "${{ vars.GCP_PROJECT_ID }}" \
+            --format 'value(status.address.url)')
+          curl -sf "${CANARY_URL}/api/v1/health" \
+            -H "X-Api-Key: ${{ secrets.API_KEY }}" \
+            || { echo "Smoke test failed"; exit 1; }
+
+      - name: Promote canary to 100%
+        run: |
+          gcloud run services update-traffic convoai-api \
+            --region us-central1 \
+            --project "${{ vars.GCP_PROJECT_ID }}" \
+            --to-latest \
+            --quiet
+
+      - name: Deploy Celery worker
+        run: |
+          gcloud run deploy convoai-worker \
+            --image "${{ env.IMAGE }}:${{ needs.build.outputs.image_tag }}" \
+            --region us-central1 \
+            --project "${{ vars.GCP_PROJECT_ID }}" \
+            --command celery \
+            --args "-A,app.worker.celery_app,worker,--loglevel=info,--concurrency=2" \
+            --quiet

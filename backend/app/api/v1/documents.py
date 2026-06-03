@@ -1,26 +1,26 @@
 """
 Document management endpoints (FR-12, FR-15, FR-16).
 
-  POST   /api/v1/admin/documents           — upload 1+ files; ingests in background
+  POST   /api/v1/admin/documents           — upload 1+ files; ingests via Celery worker
   GET    /api/v1/admin/documents           — list all documents
   DELETE /api/v1/admin/documents/{id}      — remove document + all its chunks
 """
 
-import io
+import base64
 import logging
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import AsyncSessionLocal, get_db
+from app.database import get_db
 from app.middleware.auth import require_admin_jwt
 from app.models.knowledge import Document, KnowledgeChunk
-from app.rag.ingestion import ingest_document
 from app.schemas.document import DocumentOut, DocumentUploadResponse
+from app.worker.tasks import ingest_document as ingest_document_task
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["admin"])
@@ -55,93 +55,11 @@ def _doc_to_out(doc: Document) -> DocumentOut:
 
 
 # ---------------------------------------------------------------------------
-# Background ingestion task
-# ---------------------------------------------------------------------------
-
-async def _run_ingestion(
-    doc_id: str,
-    file_bytes: bytes,
-    filename: str,
-    file_type: str,
-    extra_metadata: dict,
-) -> None:
-    """Opens its own DB session — runs outside the request/response lifecycle."""
-    async with AsyncSessionLocal() as db:
-        try:
-            file_obj = io.BytesIO(file_bytes)
-            file_obj.name = filename
-            # Update existing pending document rather than creating a new one
-            from sqlalchemy import update
-            await db.execute(
-                update(Document)
-                .where(Document.id == uuid.UUID(doc_id))
-                .values(status="processing")
-            )
-            await db.commit()
-
-            # Re-fetch the document and run ingestion on it
-            # We do this by bypassing ingest_document's document creation
-            # and calling the chunking/embedding pipeline directly
-            from app.rag.ingestion import load_document, chunk_text, embed_texts
-            import os
-            import tempfile
-
-            suffix = f".{file_type}"
-            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-                tmp.write(file_bytes)
-                tmp_path = Path(tmp.name)
-
-            try:
-                raw_text = load_document(tmp_path, file_type)
-            finally:
-                os.unlink(tmp_path)
-
-            chunks_text = chunk_text(raw_text)
-            if not chunks_text:
-                raise ValueError("Document produced no text chunks")
-
-            embeddings = await embed_texts(chunks_text)
-            base_meta  = {**extra_metadata, "filename": filename}
-
-            chunks = [
-                KnowledgeChunk(
-                    id=uuid.uuid4(),
-                    document_id=uuid.UUID(doc_id),
-                    content=text,
-                    embedding=emb,
-                    metadata_={**base_meta, "chunk_index": idx},
-                )
-                for idx, (text, emb) in enumerate(zip(chunks_text, embeddings))
-            ]
-            async with AsyncSessionLocal() as db2:
-                db2.add_all(chunks)
-                await db2.execute(
-                    update(Document)
-                    .where(Document.id == uuid.UUID(doc_id))
-                    .values(status="indexed", chunk_count=len(chunks))
-                )
-                await db2.commit()
-            logger.info("Background ingestion complete: doc=%s chunks=%d", doc_id, len(chunks))
-
-        except Exception as exc:
-            logger.exception("Background ingestion failed for doc %s: %s", doc_id, exc)
-            async with AsyncSessionLocal() as db_err:
-                from sqlalchemy import update
-                await db_err.execute(
-                    update(Document)
-                    .where(Document.id == uuid.UUID(doc_id))
-                    .values(status="failed")
-                )
-                await db_err.commit()
-
-
-# ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
 
 @router.post("/admin/documents", status_code=status.HTTP_202_ACCEPTED, response_model=DocumentUploadResponse)
 async def upload_documents(
-    background_tasks: BackgroundTasks,
     files: list[UploadFile] = File(...),
     category: str = Form(""),
     product:  str = Form(""),
@@ -151,7 +69,7 @@ async def upload_documents(
 ) -> DocumentUploadResponse:
     """
     Upload one or more documents for RAG ingestion.
-    Returns 202 immediately; ingestion runs in the background.
+    Returns 202 immediately; ingestion is dispatched to the Celery worker queue.
     Poll GET /admin/documents to check status (FR-15: available within 5 min).
     """
     if not files:
@@ -175,7 +93,6 @@ async def upload_documents(
         if not file_bytes:
             raise HTTPException(status_code=400, detail=f"'{filename}' is empty")
 
-        # Create a pending document record
         doc = Document(
             id=uuid.uuid4(),
             filename=filename,
@@ -187,14 +104,15 @@ async def upload_documents(
         db.add(doc)
         await db.flush()
 
-        background_tasks.add_task(
-            _run_ingestion,
+        # Dispatch to Celery — bytes are base64-encoded for JSON transport over Redis
+        ingest_document_task.delay(
             doc_id=str(doc.id),
-            file_bytes=file_bytes,
+            file_bytes_b64=base64.b64encode(file_bytes).decode(),
             filename=filename,
             file_type=file_type,
             extra_metadata=extra_meta,
         )
+        logger.info("Queued ingestion task for doc %s (%s)", doc.id, filename)
         docs_out.append(_doc_to_out(doc))
 
     await db.commit()
@@ -206,10 +124,31 @@ async def upload_documents(
 
 @router.get("/admin/documents", response_model=list[DocumentOut])
 async def list_documents(
+    category: str = "",
+    product:  str = "",
+    version:  str = "",
     db: AsyncSession = Depends(get_db),
     _claims: dict = Depends(require_admin_jwt),
 ) -> list[DocumentOut]:
-    result = await db.execute(select(Document).order_by(Document.created_at.desc()))
+    """
+    List documents, optionally filtered by metadata tags (FR-16).
+    Filters match against chunk metadata stored in knowledge_chunks.metadata JSONB.
+    """
+    filters = {k: v for k, v in {"category": category, "product": product, "version": version}.items() if v}
+
+    if filters:
+        # Subquery: document IDs whose chunks contain all requested metadata tags
+        subq = (
+            select(KnowledgeChunk.document_id)
+            .where(KnowledgeChunk.metadata_.contains(filters))
+            .distinct()
+            .scalar_subquery()
+        )
+        stmt = select(Document).where(Document.id.in_(subq)).order_by(Document.created_at.desc())
+    else:
+        stmt = select(Document).order_by(Document.created_at.desc())
+
+    result = await db.execute(stmt)
     return [_doc_to_out(d) for d in result.scalars()]
 
 

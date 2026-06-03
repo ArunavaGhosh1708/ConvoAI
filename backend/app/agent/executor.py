@@ -9,6 +9,7 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_openai import ChatOpenAI
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agent.circuit_breaker import CircuitBreakerOpen, llm_breaker
 from app.agent.context import AgentContext
 from app.agent.prompts import SYSTEM_PROMPT
 from app.agent.tools import build_tools
@@ -63,11 +64,19 @@ async def run_agent(
     chat_history: list[BaseMessage],
 ) -> str:
     """Non-streaming invoke. Returns the full response text."""
+    llm_breaker.before_call()
     executor = create_agent_executor(db=db, context=context, streaming=False)
-    result = await executor.ainvoke(
-        {"input": user_input, "chat_history": chat_history}
-    )
-    return result["output"]
+    try:
+        result = await executor.ainvoke(
+            {"input": user_input, "chat_history": chat_history}
+        )
+        llm_breaker.on_success()
+        return result["output"]
+    except CircuitBreakerOpen:
+        raise
+    except Exception:
+        llm_breaker.on_failure()
+        raise
 
 
 async def stream_agent_tokens(
@@ -82,17 +91,26 @@ async def stream_agent_tokens(
     Uses astream_events v2 and filters out tool-call JSON tokens so only
     the natural-language response reaches the caller.
     """
+    llm_breaker.before_call()
     executor = create_agent_executor(db=db, context=context, streaming=True)
 
-    async for event in executor.astream_events(
-        {"input": user_input, "chat_history": chat_history},
-        version="v2",
-    ):
-        if event["event"] != "on_chat_model_stream":
-            continue
+    try:
+        async for event in executor.astream_events(
+            {"input": user_input, "chat_history": chat_history},
+            version="v2",
+        ):
+            if event["event"] != "on_chat_model_stream":
+                continue
 
-        chunk = event["data"]["chunk"]
-        content = chunk.content if isinstance(chunk.content, str) else ""
-        # Skip empty content and tool-call token chunks
-        if content and not getattr(chunk, "tool_call_chunks", None):
-            yield content
+            chunk = event["data"]["chunk"]
+            content = chunk.content if isinstance(chunk.content, str) else ""
+            # Skip empty content and tool-call token chunks
+            if content and not getattr(chunk, "tool_call_chunks", None):
+                yield content
+
+        llm_breaker.on_success()
+    except CircuitBreakerOpen:
+        raise
+    except Exception:
+        llm_breaker.on_failure()
+        raise

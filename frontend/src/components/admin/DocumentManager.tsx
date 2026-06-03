@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import { FileText, RefreshCw, Trash2, Upload } from 'lucide-react'
+import { FileText, Filter, RefreshCw, Trash2, Upload } from 'lucide-react'
 import { type DragEvent, type ChangeEvent, useCallback, useEffect, useRef, useState } from 'react'
 import { deleteDocument, fetchDocuments, uploadDocuments } from '../../lib/api'
 import type { DocumentOut } from '../../lib/types'
@@ -25,19 +25,22 @@ export function DocumentManager() {
   const [uploading, setUploading] = useState(false)
   const [error,     setError]     = useState<string | null>(null)
   const [dragging,  setDragging]  = useState(false)
+  const [category,  setCategory]  = useState('')
+  const [product,   setProduct]   = useState('')
+  const [version,   setVersion]   = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      setDocs(await fetchDocuments())
+      setDocs(await fetchDocuments({ category, product, version }))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load documents')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [category, product, version])
 
   useEffect(() => { load() }, [load])
 
@@ -87,6 +90,33 @@ export function DocumentManager() {
           <RefreshCw className="h-3.5 w-3.5" />
           Refresh
         </button>
+      </div>
+
+      {/* Metadata filters (FR-16) */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <Filter className="h-4 w-4 shrink-0 text-gray-400" />
+        {([
+          { label: 'Category', value: category, setter: setCategory },
+          { label: 'Product',  value: product,  setter: setProduct  },
+          { label: 'Version',  value: version,  setter: setVersion  },
+        ] as const).map(({ label, value, setter }) => (
+          <input
+            key={label}
+            type="text"
+            placeholder={label}
+            value={value}
+            onChange={(e) => setter(e.target.value)}
+            className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-300 w-28"
+          />
+        ))}
+        {(category || product || version) && (
+          <button
+            onClick={() => { setCategory(''); setProduct(''); setVersion('') }}
+            className="text-xs text-gray-400 hover:text-gray-600 transition"
+          >
+            Clear
+          </button>
+        )}
       </div>
 
       {/* Drop zone */}

@@ -1,0 +1,92 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: convoai-api
+  labels:
+    cloud.googleapis.com/location: us-central1
+annotations:
+  run.googleapis.com/launch-stage: GA
+spec:
+  template:
+    metadata:
+      annotations:
+        # Keep 1 instance warm at all times to avoid cold starts (NFR: <3s cold start)
+        autoscaling.knative.dev/minScale: "1"
+        autoscaling.knative.dev/maxScale: "20"
+        # Scale out at 60% CPU utilisation (PRD §10.2)
+        autoscaling.knative.dev/target: "80"
+        run.googleapis.com/cpu-throttling: "false"
+        run.googleapis.com/vpc-access-connector: projects/PROJECT_ID/locations/us-central1/connectors/convoai-vpc-connector
+        run.googleapis.com/vpc-access-egress: private-ranges-only
+    spec:
+      containerConcurrency: 80
+      timeoutSeconds: 300
+      serviceAccountName: convoai-api-sa@PROJECT_ID.iam.gserviceaccount.com
+      containers:
+        - image: us-central1-docker.pkg.dev/PROJECT_ID/convoai/api:latest
+          ports:
+            - name: http1
+              containerPort: 8000
+          resources:
+            limits:
+              cpu: "2"
+              memory: 4Gi
+          env:
+            - name: APP_ENV
+              value: production
+            - name: LOG_LEVEL
+              value: INFO
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: convoai-database-url
+                  key: latest
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: convoai-redis-url
+                  key: latest
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: convoai-openai-api-key
+                  key: latest
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: convoai-jwt-secret
+                  key: latest
+            - name: API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: convoai-api-key
+                  key: latest
+            - name: ELEVENLABS_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: convoai-elevenlabs-api-key
+                  key: latest
+            - name: CELERY_BROKER_URL
+              valueFrom:
+                secretKeyRef:
+                  name: convoai-celery-broker-url
+                  key: latest
+            - name: CORS_ORIGINS
+              value: "https://your-frontend-domain.com"
+            - name: PII_REDACTION
+              value: "true"
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+  traffic:
+    - percent: 100
+      latestRevision: true

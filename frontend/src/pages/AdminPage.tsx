@@ -2,6 +2,7 @@ import { LayoutDashboard } from 'lucide-react'
 import { DocumentManager } from '../components/admin/DocumentManager'
 import { EscalationQueue } from '../components/admin/EscalationQueue'
 import { MetricsDashboard } from '../components/admin/MetricsDashboard'
+import { ReviewQueue } from '../components/admin/ReviewQueue'
 import { TranscriptViewer } from '../components/admin/TranscriptViewer'
 import { VoiceSettings } from '../components/admin/VoiceSettings'
 
@@ -22,6 +23,7 @@ export function AdminPage() {
       <main className="mx-auto max-w-6xl px-6 py-8">
         <MetricsDashboard />
         <EscalationQueue />
+        <ReviewQueue />
         <DocumentManager />
         <TranscriptViewer />
         <VoiceSettings />

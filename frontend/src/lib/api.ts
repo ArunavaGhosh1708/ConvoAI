@@ -1,4 +1,4 @@
-import type { ConversationOut, DocumentOut, EscalationTicketOut, MetricsResponse, TranscriptionResponse, VoiceConfig } from './types'
+import type { ConversationOut, DocumentOut, EscalationTicketOut, MetricsResponse, ReviewQueueItem, TranscriptionResponse, VoiceConfig } from './types'
 
 const BASE      = import.meta.env.VITE_API_URL  ?? ''
 const API_KEY   = import.meta.env.VITE_API_KEY  ?? 'dev-api-key'
@@ -102,10 +102,14 @@ export async function updateVoiceConfig(config: Partial<VoiceConfig>): Promise<V
 // Documents (admin JWT-protected)
 // ---------------------------------------------------------------------------
 
-export async function fetchDocuments(): Promise<DocumentOut[]> {
-  const res = await fetch(`${BASE}/api/v1/admin/documents`, {
-    headers: adminHeaders(),
-  })
+export async function fetchDocuments(
+  filters: { category?: string; product?: string; version?: string } = {},
+): Promise<DocumentOut[]> {
+  const url = new URL(`${BASE}/api/v1/admin/documents`, window.location.origin)
+  if (filters.category) url.searchParams.set('category', filters.category)
+  if (filters.product)  url.searchParams.set('product',  filters.product)
+  if (filters.version)  url.searchParams.set('version',  filters.version)
+  const res = await fetch(url.toString(), { headers: adminHeaders() })
   if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`)
   return res.json()
 }
@@ -159,6 +163,18 @@ export async function patchEscalationStatus(
     method:  'PATCH',
     headers: { ...adminHeaders(), 'Content-Type': 'application/json' },
     body:    JSON.stringify({ status }),
+  })
+  if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`)
+  return res.json()
+}
+
+// ---------------------------------------------------------------------------
+// Review queue — low-confidence sessions (admin JWT-protected)
+// ---------------------------------------------------------------------------
+
+export async function fetchReviewQueue(): Promise<ReviewQueueItem[]> {
+  const res = await fetch(`${BASE}/api/v1/admin/review-queue`, {
+    headers: adminHeaders(),
   })
   if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`)
   return res.json()

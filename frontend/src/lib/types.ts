@@ -53,12 +53,22 @@ export interface ChatMessage {
 
 // Admin / metrics
 export interface MetricsResponse {
-  total_sessions: number
+  total_sessions:  number
   active_sessions: number
   resolution_rate: number   // 0–100
   escalation_rate: number   // 0–100
-  avg_confidence: number    // 0–1
-  refreshed_at: string
+  avg_confidence:  number   // 0–1
+  avg_response_ms: number   // ms, last 24 h
+  refreshed_at:    string
+}
+
+export interface ReviewQueueItem {
+  conversation_id: string
+  user_id: string
+  channel: string
+  avg_confidence: number
+  message_count: number
+  created_at: string
 }
 
 export interface VoiceConfig {

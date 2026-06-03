@@ -65,5 +65,9 @@ class Settings(BaseSettings):
     elevenlabs_model: str = "eleven_turbo_v2_5"        # lowest-latency model
     elevenlabs_speed: float = 1.0
 
+    # Celery
+    celery_broker_url: str = "redis://localhost:6379/1"
+    celery_result_backend: str = "redis://localhost:6379/1"
+
 
 settings = Settings()

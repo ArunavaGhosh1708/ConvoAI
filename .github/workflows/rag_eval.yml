@@ -1,0 +1,175 @@
+name: Nightly RAG Eval + Load Test
+
+on:
+  schedule:
+    - cron: '0 2 * * *'   # 02:00 UTC every night
+  workflow_dispatch:       # allow manual trigger
+
+jobs:
+  # ── RAG quality gate ────────────────────────────────────────────────────────
+  rag-eval:
+    name: RAG Eval (precision@5 regression gate)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: convoai
+          POSTGRES_PASSWORD: convoai
+          POSTGRES_DB: convoai
+        options: >-
+          --health-cmd "pg_isready -U convoai -d convoai"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 5432:5432
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+        ports:
+          - 6379:6379
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://convoai:convoai@localhost:5432/convoai
+      REDIS_URL: redis://localhost:6379/0
+      CELERY_BROKER_URL: redis://localhost:6379/1
+      CELERY_RESULT_BACKEND: redis://localhost:6379/1
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      JWT_SECRET: eval-jwt-secret
+      API_KEY: eval-api-key
+      APP_ENV: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Run migrations
+        working-directory: backend
+        run: alembic upgrade head
+
+      - name: Start API server in background
+        working-directory: backend
+        run: |
+          uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+          echo $! > /tmp/api.pid
+          # Wait for API to be ready
+          for i in $(seq 1 20); do
+            curl -sf http://localhost:8000/api/v1/health && break
+            sleep 2
+          done
+
+      - name: Run RAG evaluation
+        run: |
+          python eval/rag_eval.py \
+            --api-url http://localhost:8000 \
+            --api-key eval-api-key \
+            --dataset eval/golden_dataset.jsonl \
+            --baseline eval/baseline.json \
+            --ci
+
+      - name: Stop API server
+        if: always()
+        run: kill $(cat /tmp/api.pid) 2>/dev/null || true
+
+  # ── k6 load test ────────────────────────────────────────────────────────────
+  load-test:
+    name: k6 Load Test (500 VU SSE)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: convoai
+          POSTGRES_PASSWORD: convoai
+          POSTGRES_DB: convoai
+        options: >-
+          --health-cmd "pg_isready -U convoai -d convoai"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 5432:5432
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+        ports:
+          - 6379:6379
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://convoai:convoai@localhost:5432/convoai
+      REDIS_URL: redis://localhost:6379/0
+      CELERY_BROKER_URL: redis://localhost:6379/1
+      CELERY_RESULT_BACKEND: redis://localhost:6379/1
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      JWT_SECRET: load-jwt-secret
+      API_KEY: load-api-key
+      APP_ENV: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Run migrations
+        working-directory: backend
+        run: alembic upgrade head
+
+      - name: Start API server
+        working-directory: backend
+        run: |
+          uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4 &
+          echo $! > /tmp/api.pid
+          for i in $(seq 1 20); do
+            curl -sf http://localhost:8000/api/v1/health && break
+            sleep 2
+          done
+
+      - name: Install k6
+        run: |
+          curl -fsSL https://dl.k6.io/key.gpg | sudo gpg --dearmor -o /usr/share/keyrings/k6-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" \
+            | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update && sudo apt-get install -y k6
+
+      - name: Run k6 load test
+        run: |
+          k6 run \
+            --env BASE_URL=http://localhost:8000 \
+            --env API_KEY=load-api-key \
+            --out json=load-test-results.json \
+            loadtests/k6/sse_chat.js
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: k6-load-test-results
+          path: load-test-results.json
+
+      - name: Stop API server
+        if: always()
+        run: kill $(cat /tmp/api.pid) 2>/dev/null || true
