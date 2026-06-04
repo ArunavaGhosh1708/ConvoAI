@@ -222,3 +222,33 @@ def test_gen_token_custom_expiry(capsys):
     token = captured.out.strip()
     payload = jwt.decode(token, "test-jwt-secret", algorithms=["HS256"])
     assert payload["exp"] - payload["iat"] == pytest.approx(7200, abs=5)
+
+
+# ===========================================================================
+# Celery worker configuration
+# ===========================================================================
+
+def test_ingest_document_task_is_registered():
+    from app.worker.tasks import ingest_document
+    assert ingest_document.name == "app.worker.tasks.ingest_document"
+
+
+def test_ingest_document_task_retries_on_failure():
+    from app.worker.tasks import ingest_document
+    assert ingest_document.max_retries == 3
+
+
+def test_ingest_document_task_autoretry_configured():
+    from app.worker.tasks import ingest_document
+    assert Exception in ingest_document.autoretry_for
+
+
+def test_celery_app_has_correct_broker():
+    from app.config import settings
+    from app.worker.celery_app import celery_app
+    assert celery_app.conf.broker_url == settings.celery_broker_url
+
+
+def test_celery_app_task_acks_late():
+    from app.worker.celery_app import celery_app
+    assert celery_app.conf.task_acks_late is True
