@@ -1,6 +1,6 @@
 """Unit tests for Celery worker task definitions."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 
 def test_ingest_document_task_is_registered():
@@ -24,7 +24,7 @@ def test_celery_app_task_acks_late():
     assert celery_app.conf.task_acks_late is True
 
 
-@patch("app.worker.tasks._run_ingestion_async", new_callable=AsyncMock)
+@patch("app.worker.tasks._run_ingestion_async")   # plain MagicMock — avoids event loop
 @patch("app.worker.tasks.asyncio.run")
 def test_ingest_document_decodes_base64_and_calls_async(mock_run, _mock_ingestion):
     import base64
