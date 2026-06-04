@@ -77,8 +77,10 @@ async def test_upload_document_accepted(mock_client):
     pending_doc = _mock_doc("pending")
     mock_db.flush = AsyncMock()
 
-    with patch("app.api.v1.documents.Document") as mock_doc_cls:
+    with patch("app.api.v1.documents.Document") as mock_doc_cls, \
+         patch("app.api.v1.documents.ingest_document_task") as mock_task:
         mock_doc_cls.return_value = pending_doc
+        mock_task.delay.return_value = None
 
         resp = await client.post(
             "/api/v1/admin/documents",

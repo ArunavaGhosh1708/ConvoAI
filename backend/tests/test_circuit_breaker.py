@@ -47,23 +47,25 @@ def test_success_resets_failure_count_when_closed():
 
 def test_transitions_to_half_open_after_timeout(monkeypatch):
     import time
-    cb = make_breaker(recovery_timeout=0.0)
+    real_now = time.monotonic()
+    cb = make_breaker(recovery_timeout=60.0)
     for _ in range(3):
         cb.on_failure()
     assert cb.state == "OPEN"
 
-    # Advance time past recovery_timeout
-    monkeypatch.setattr(time, "monotonic", lambda: 9999.0)
+    # Mock time to be 120 s after real_now — guarantees it exceeds recovery_timeout
+    monkeypatch.setattr(time, "monotonic", lambda: real_now + 120.0)
     cb.before_call()  # should not raise — transitions to HALF_OPEN
     assert cb.state == "HALF_OPEN"
 
 
 def test_half_open_closes_after_success_threshold(monkeypatch):
     import time
-    cb = make_breaker(recovery_timeout=0.0, success_threshold=2)
+    real_now = time.monotonic()
+    cb = make_breaker(recovery_timeout=60.0, success_threshold=2)
     for _ in range(3):
         cb.on_failure()
-    monkeypatch.setattr(time, "monotonic", lambda: 9999.0)
+    monkeypatch.setattr(time, "monotonic", lambda: real_now + 120.0)
     cb.before_call()  # → HALF_OPEN
 
     cb.on_success()
@@ -74,10 +76,11 @@ def test_half_open_closes_after_success_threshold(monkeypatch):
 
 def test_half_open_reopens_on_failure(monkeypatch):
     import time
-    cb = make_breaker(recovery_timeout=0.0)
+    real_now = time.monotonic()
+    cb = make_breaker(recovery_timeout=60.0)
     for _ in range(3):
         cb.on_failure()
-    monkeypatch.setattr(time, "monotonic", lambda: 9999.0)
+    monkeypatch.setattr(time, "monotonic", lambda: real_now + 120.0)
     cb.before_call()  # → HALF_OPEN
     cb.on_failure()   # → OPEN again
     assert cb.state == "OPEN"
