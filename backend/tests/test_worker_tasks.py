@@ -24,8 +24,9 @@ def test_celery_app_task_acks_late():
     assert celery_app.conf.task_acks_late is True
 
 
+@patch("app.worker.tasks._run_ingestion_async", new_callable=AsyncMock)
 @patch("app.worker.tasks.asyncio.run")
-def test_ingest_document_decodes_base64_and_calls_async(mock_run):
+def test_ingest_document_decodes_base64_and_calls_async(mock_run, _mock_ingestion):
     import base64
     from app.worker.tasks import ingest_document
 
@@ -34,7 +35,6 @@ def test_ingest_document_decodes_base64_and_calls_async(mock_run):
 
     mock_run.return_value = {"doc_id": "abc", "chunk_count": 3}
 
-    # Call the underlying function directly (bypass Celery task infrastructure)
     result = ingest_document.run(
         doc_id="test-doc-id",
         file_bytes_b64=encoded,

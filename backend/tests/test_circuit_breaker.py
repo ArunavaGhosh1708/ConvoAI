@@ -6,12 +6,9 @@ from app.agent.circuit_breaker import CircuitBreaker, CircuitBreakerOpen
 
 
 def make_breaker(**kwargs):
-    return CircuitBreaker(
-        failure_threshold=3,
-        recovery_timeout=60.0,
-        success_threshold=2,
-        **kwargs,
-    )
+    defaults = dict(failure_threshold=3, recovery_timeout=60.0, success_threshold=2)
+    defaults.update(kwargs)
+    return CircuitBreaker(**defaults)
 
 
 def test_initial_state_is_closed():
