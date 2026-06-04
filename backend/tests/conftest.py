@@ -57,8 +57,10 @@ async def setup_test_db():
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield
-    async with test_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+    # No drop_all — the CI database is ephemeral (fresh container each run).
+    # Dropping tables here races with pytest-asyncio's session event loop
+    # teardown and causes asyncpg "another operation is in progress" errors
+    # on whichever test happens to be last in the session.
 
 
 @pytest_asyncio.fixture
