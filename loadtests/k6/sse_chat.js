@@ -45,7 +45,7 @@ export const options = {
   },
   thresholds: {
     ...THRESHOLDS,
-    sse_dropped: ['count<5'],          // at most 5 dropped streams
+    sse_dropped_streams: ['count<5'],   // at most 5 dropped streams
     sse_first_byte_ms: ['p(95)<800'], // SSE first token < 800 ms p95
   },
 };
