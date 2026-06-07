@@ -64,6 +64,7 @@ def redact_with_regex(text: str) -> str:
 
 
 def redact_with_presidio(text: str) -> str:
+    assert _analyzer is not None and _anonymizer is not None
     results = _analyzer.analyze(text=text, language="en")
     if not results:
         return text

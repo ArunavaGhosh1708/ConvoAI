@@ -145,6 +145,7 @@ jobs:
       JWT_SECRET: smoke-jwt-secret
       API_KEY: smoke-api-key
       APP_ENV: test
+      RATE_LIMIT_RPM: "10000"
 
     steps:
       - uses: actions/checkout@v4

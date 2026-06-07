@@ -100,6 +100,7 @@ export default function () {
 
   if (!ok || res.status !== 200) {
     sseDropped.add(1);
+    sleep(1);   // back-off so failed VUs don't storm the API
     return;
   }
 

@@ -99,7 +99,7 @@ def _recursive_split(
             return _recursive_split(text, remaining_seps, chunk_size, chunk_overlap)
         return [text]
 
-    chunks: list[str] = []
+    chunks = []
     current = ""
 
     for part in parts:

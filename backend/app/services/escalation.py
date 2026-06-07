@@ -55,6 +55,7 @@ class WebhookAdapter(EscalationAdapter):
         self.secret = secret
 
     def _sign(self, body: bytes) -> str:
+        assert self.secret is not None
         sig = hmac.new(self.secret.encode(), body, hashlib.sha256).hexdigest()
         return f"sha256={sig}"
 
