@@ -41,7 +41,7 @@ jobs:
 
       - name: eslint
         working-directory: frontend
-        run: npm ci && npx eslint src --max-warnings=0
+        run: npm ci && npm run lint
 
   # ── Stage 2: Unit & integration tests ───────────────────────────────────────
   test:
